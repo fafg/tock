@@ -182,32 +182,38 @@ pub unsafe fn reset_handler() {
     // GPIO
     //--------------------------------------------------------------------------
 
-    let gpio = components::gpio::GpioPinsNine::new(
-        &nrf52840::gpio::PORT[GPIO_D2],
-        &nrf52840::gpio::PORT[GPIO_D3],
-        &nrf52840::gpio::PORT[GPIO_D4],
-        &nrf52840::gpio::PORT[GPIO_D5],
-        &nrf52840::gpio::PORT[GPIO_D6],
-        &nrf52840::gpio::PORT[GPIO_D7],
-        &nrf52840::gpio::PORT[GPIO_D8],
-        &nrf52840::gpio::PORT[GPIO_D9],
-        &nrf52840::gpio::PORT[GPIO_D10],
-        board_kernel,
-    )
-    .finalize(());
+    let gpio = components::gpio::GpioComponent::new(board_kernel).finalize(
+        components::gpio_component_helper!(
+            &nrf52840::gpio::PORT[GPIO_D2],
+            &nrf52840::gpio::PORT[GPIO_D3],
+            &nrf52840::gpio::PORT[GPIO_D4],
+            &nrf52840::gpio::PORT[GPIO_D5],
+            &nrf52840::gpio::PORT[GPIO_D6],
+            &nrf52840::gpio::PORT[GPIO_D7],
+            &nrf52840::gpio::PORT[GPIO_D8],
+            &nrf52840::gpio::PORT[GPIO_D9],
+            &nrf52840::gpio::PORT[GPIO_D10]
+        ),
+    );
 
     //--------------------------------------------------------------------------
     // LEDs
     //--------------------------------------------------------------------------
 
-    let led = components::led::LedsThree::new(
-        (&nrf52840::gpio::PORT[LED_RED_PIN], ActiveLow),
-        (&nrf52840::gpio::PORT[LED_GREEN_PIN], ActiveLow),
-        (&nrf52840::gpio::PORT[LED_BLUE_PIN], ActiveLow),
-    )
-    .finalize(());
-
-
+    let led = components::led::LedsComponent::new().finalize(components::led_component_helper!(
+        (
+            &nrf52840::gpio::PORT[LED_RED_PIN],
+            ActiveLow
+        ),
+        (
+            &nrf52840::gpio::PORT[LED_GREEN_PIN],
+            ActiveLow
+        ),
+        (
+            &nrf52840::gpio::PORT[LED_BLUE_PIN],
+            ActiveLow
+        )
+    ));
 
     //--------------------------------------------------------------------------
     // ALARM & TIMER
