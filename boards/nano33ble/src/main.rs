@@ -201,18 +201,9 @@ pub unsafe fn reset_handler() {
     //--------------------------------------------------------------------------
 
     let led = components::led::LedsComponent::new().finalize(components::led_component_helper!(
-        (
-            &nrf52840::gpio::PORT[LED_RED_PIN],
-            ActiveLow
-        ),
-        (
-            &nrf52840::gpio::PORT[LED_GREEN_PIN],
-            ActiveLow
-        ),
-        (
-            &nrf52840::gpio::PORT[LED_BLUE_PIN],
-            ActiveLow
-        )
+        (&nrf52840::gpio::PORT[LED_RED_PIN], ActiveLow),
+        (&nrf52840::gpio::PORT[LED_GREEN_PIN], ActiveLow),
+        (&nrf52840::gpio::PORT[LED_BLUE_PIN], ActiveLow)
     ));
 
     //--------------------------------------------------------------------------

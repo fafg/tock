@@ -13,7 +13,6 @@
 //     debug::panic_blink_forever(&mut [led])
 // }
 
-
 use core::fmt::Write;
 use core::panic::PanicInfo;
 use cortexm4;
