@@ -6,10 +6,10 @@
 #![no_main]
 #![deny(missing_docs)]
 
-use capsules::led::ActivationMode::ActiveLow;
 use kernel::capabilities;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
+use kernel::hil::gpio::ActivationMode::ActiveLow;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
 
@@ -53,6 +53,8 @@ static mut APP_MEMORY: [u8; 245760] = [0; 245760];
 static mut PROCESSES: [Option<&'static dyn kernel::procs::ProcessType>; NUM_PROCS] =
     [None, None, None, None, None, None, None, None];
 
+static mut CHIP: Option<&'static nrf52840::chip::Chip> = None;
+
 /// Dummy buffer that causes the linker to reserve enough space for the stack.
 #[no_mangle]
 #[link_section = ".stack_buffer"]
@@ -67,8 +69,8 @@ pub struct Platform {
     // >,
     // ieee802154_radio: Option<&'static capsules::ieee802154::RadioDriver<'static>>,
     console: &'static capsules::console::Console<'static>,
-    gpio: &'static capsules::gpio::GPIO<'static>,
-    led: &'static capsules::led::LED<'static>,
+    gpio: &'static capsules::gpio::GPIO<'static, nrf52::gpio::GPIOPin>,
+    led: &'static capsules::led::LED<'static, nrf52::gpio::GPIOPin>,
     rng: &'static capsules::rng::RngDriver<'static>,
     ipc: kernel::ipc::IPC,
     alarm: &'static capsules::alarm::AlarmDriver<
@@ -182,29 +184,46 @@ pub unsafe fn reset_handler() {
     // GPIO
     //--------------------------------------------------------------------------
 
-    let gpio = components::gpio::GpioComponent::new(board_kernel).finalize(
+    let gpio = components::gpio::GpioComponent::new(
+        board_kernel,
         components::gpio_component_helper!(
-            &nrf52840::gpio::PORT[GPIO_D2],
-            &nrf52840::gpio::PORT[GPIO_D3],
-            &nrf52840::gpio::PORT[GPIO_D4],
-            &nrf52840::gpio::PORT[GPIO_D5],
-            &nrf52840::gpio::PORT[GPIO_D6],
-            &nrf52840::gpio::PORT[GPIO_D7],
-            &nrf52840::gpio::PORT[GPIO_D8],
-            &nrf52840::gpio::PORT[GPIO_D9],
-            &nrf52840::gpio::PORT[GPIO_D10]
+            nrf52840::gpio::GPIOPin,
+            0 => &nrf52840::gpio::PORT[GPIO_D2],
+            1 => &nrf52840::gpio::PORT[GPIO_D3],
+            2 => &nrf52840::gpio::PORT[GPIO_D4],
+            3 => &nrf52840::gpio::PORT[GPIO_D5],
+            4 => &nrf52840::gpio::PORT[GPIO_D6],
+            5 => &nrf52840::gpio::PORT[GPIO_D7],
+            6 => &nrf52840::gpio::PORT[GPIO_D8],
+            7 => &nrf52840::gpio::PORT[GPIO_D9],
+            8 => &nrf52840::gpio::PORT[GPIO_D10]
         ),
-    );
+    )
+    .finalize(components::gpio_component_buf!(nrf52840::gpio::GPIOPin));
 
     //--------------------------------------------------------------------------
     // LEDs
     //--------------------------------------------------------------------------
 
-    let led = components::led::LedsComponent::new().finalize(components::led_component_helper!(
+    let led = components::led::LedsComponent::new(components::led_component_helper!(
+        nrf52840::gpio::GPIOPin,
         (&nrf52840::gpio::PORT[LED_RED_PIN], ActiveLow),
         (&nrf52840::gpio::PORT[LED_GREEN_PIN], ActiveLow),
         (&nrf52840::gpio::PORT[LED_BLUE_PIN], ActiveLow)
-    ));
+    ))
+    .finalize(components::led_component_buf!(nrf52840::gpio::GPIOPin));
+
+    //--------------------------------------------------------------------------
+    // Deferred Call (Dynamic) Setup
+    //--------------------------------------------------------------------------
+
+    let dynamic_deferred_call_clients =
+        static_init!([DynamicDeferredCallClientState; 2], Default::default());
+    let dynamic_deferred_caller = static_init!(
+        DynamicDeferredCall,
+        DynamicDeferredCall::new(dynamic_deferred_call_clients)
+    );
+    DynamicDeferredCall::set_global_instance(dynamic_deferred_caller);
 
     //--------------------------------------------------------------------------
     // ALARM & TIMER
@@ -223,8 +242,12 @@ pub unsafe fn reset_handler() {
     //--------------------------------------------------------------------------
 
     // Create a shared UART channel for the console and for kernel debug.
-    let uart_mux =
-        components::console::UartMuxComponent::new(&nrf52::uart::UARTE0, 115200).finalize(());
+    let uart_mux = components::console::UartMuxComponent::new(
+        &nrf52::uart::UARTE0,
+        115200,
+        dynamic_deferred_caller,
+    )
+    .finalize(());
 
     // Configure the UART pins on this specific board.
     nrf52::uart::UARTE0.initialize(
@@ -258,23 +281,7 @@ pub unsafe fn reset_handler() {
 
     // Start all of the clocks. Low power operation will require a better
     // approach than this.
-    nrf52::clock::CLOCK.low_stop();
-    nrf52::clock::CLOCK.high_stop();
-
-    nrf52::clock::CLOCK.low_set_source(nrf52::clock::LowClockSource::XTAL);
-    nrf52::clock::CLOCK.low_start();
-    nrf52::clock::CLOCK.high_set_source(nrf52::clock::HighClockSource::XTAL);
-    nrf52::clock::CLOCK.high_start();
-    while !nrf52::clock::CLOCK.low_started() {}
-    while !nrf52::clock::CLOCK.high_started() {}
-
-    let dynamic_deferred_call_clients =
-        static_init!([DynamicDeferredCallClientState; 1], Default::default());
-    let dynamic_deferred_call = static_init!(
-        DynamicDeferredCall,
-        DynamicDeferredCall::new(dynamic_deferred_call_clients)
-    );
-    DynamicDeferredCall::set_global_instance(dynamic_deferred_call);
+    nrf52dk_base::nrf52_components::NrfClockComponent::new().finalize(());
 
     let platform = Platform {
         // ble_radio: ble_radio,
@@ -287,10 +294,8 @@ pub unsafe fn reset_handler() {
         ipc: kernel::ipc::IPC::new(board_kernel, &memory_allocation_capability),
     };
 
-    let chip = static_init!(
-        nrf52::chip::NRF52,
-        nrf52::chip::NRF52::new(&nrf52840::gpio::PORT)
-    );
+    let chip = static_init!(nrf52840::chip::Chip, nrf52840::chip::new());
+    CHIP = Some(chip);
 
     debug!("Initialization complete. Entering main loop\r");
     // debug!("{}", &nrf52::ficr::FICR_INSTANCE);
@@ -302,16 +307,28 @@ pub unsafe fn reset_handler() {
     extern "C" {
         /// Beginning of the ROM region containing app images.
         static _sapps: u8;
+
+        /// End of the ROM region containing app images.
+        ///
+        /// This symbol is defined in the linker script.
+        static _eapps: u8;
     }
     kernel::procs::load_processes(
         board_kernel,
         chip,
-        &_sapps as *const u8,
+        core::slice::from_raw_parts(
+            &_sapps as *const u8,
+            &_eapps as *const u8 as usize - &_sapps as *const u8 as usize,
+        ),
         &mut APP_MEMORY,
         &mut PROCESSES,
         FAULT_RESPONSE,
         &process_management_capability,
-    );
+    )
+    .unwrap_or_else(|err| {
+        debug!("Error loading processes!");
+        debug!("{:?}", err);
+    });
 
     board_kernel.kernel_loop(&platform, chip, Some(&platform.ipc), &main_loop_capability);
 }
