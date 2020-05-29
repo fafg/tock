@@ -7,11 +7,14 @@
 #![deny(missing_docs)]
 
 use kernel::capabilities;
+use kernel::Chip;
+use kernel::mpu::MPU;
 use kernel::common::dynamic_deferred_call::{DynamicDeferredCall, DynamicDeferredCallClientState};
 use kernel::component::Component;
 use kernel::hil::gpio::ActivationMode::ActiveLow;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
+use kernel::hil::usb::Client;
 
 use nrf52840::gpio::Pin;
 
@@ -279,6 +282,32 @@ pub unsafe fn reset_handler() {
     //     )
     //     .finalize(());
 
+
+
+
+    // // Configure the USB controller
+    // let usb_client = static_init!(
+    //     capsules::usb::cdc::Client<'static, nrf52::usbd::Usbd<'static>>,
+    //     capsules::usb::cdc::Client::new(&nrf52::usbd::USBD)
+    // );
+    // nrf52::usbd::USBD.set_client(usb_client);
+
+
+    // Configure the USB controller
+    let usb_client = static_init!(
+        capsules::usb::usbc_client::Client<'static, nrf52::usbd::Usbd<'static>>,
+        capsules::usb::usbc_client::Client::new(&nrf52::usbd::USBD)
+    );
+    nrf52::usbd::USBD.set_client(usb_client);
+
+
+
+
+
+
+
+
+
     // Start all of the clocks. Low power operation will require a better
     // approach than this.
     nrf52dk_base::nrf52_components::NrfClockComponent::new().finalize(());
@@ -297,8 +326,17 @@ pub unsafe fn reset_handler() {
     let chip = static_init!(nrf52840::chip::Chip, nrf52840::chip::new());
     CHIP = Some(chip);
 
-    debug!("Initialization complete. Entering main loop\r");
+    chip.mpu().disable_mpu();
+
+    debug!("Initializationnnnn complete. Entering main loopppy");
     // debug!("{}", &nrf52::ficr::FICR_INSTANCE);
+
+
+
+    usb_client.enable();
+    usb_client.attach();
+
+debug!("why");
 
     //--------------------------------------------------------------------------
     // PROCESSES AND MAIN LOOP
