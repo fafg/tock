@@ -166,6 +166,7 @@ impl<'a, C: hil::usb::UsbController<'a>> Client<'a, C> {
                     product_string: 2,
                     serial_number_string: 3,
                     class: 0x2, // Class: CDC
+                    max_packet_size_ep0: 64,
                     ..descriptors::DeviceDescriptor::default()
                 },
                 descriptors::ConfigurationDescriptor {
