@@ -246,6 +246,13 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
 
     /// Handle a Control Out transaction
     fn ctrl_out(&'a self, endpoint: usize, packet_bytes: u32) -> hil::usb::CtrlOutResult {
+
+        // Hack to make sure we ask to send data in case the data to send in
+        // came in first before USB was actually all configured.
+        if self.tx_buffer.is_some() {
+            self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
+        }
+
         self.client_ctrl.ctrl_out(endpoint, packet_bytes)
     }
 
