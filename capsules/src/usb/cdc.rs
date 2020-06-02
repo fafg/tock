@@ -392,7 +392,31 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
     }
 
     fn packet_transmitted(&'a self, _endpoint: usize) {
-        // Nothing to do.
+
+        // Check if more to send.
+        self.tx_buffer
+            .take()
+            .map(|tx_buf| {
+                // Check if we have any bytes to send.
+                let remaining = self.tx_len.get() - self.tx_offset.get();
+                if remaining > 0 {
+                    // We do, so ask to send again.
+                    self.tx_buffer.replace(tx_buf);
+                    self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
+                } else {
+                    // We don't have anything to send, so that means we are
+                    // ok to signal the callback.
+
+                    // Signal the callback and pass back the TX buffer.
+                    self.tx_client.map(move |tx_client| {
+                        tx_client.transmitted_buffer(
+                            tx_buf,
+                            self.tx_len.get(),
+                            ReturnCode::SUCCESS,
+                        )
+                    });
+                }
+            });
     }
 }
 
