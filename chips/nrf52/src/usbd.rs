@@ -25,7 +25,8 @@ macro_rules! debug_events {
 
 macro_rules! debug_tasks {
     [ $( $arg:expr ),+ ] => {
-        {} // debug!($( $arg ),+);
+        // {} //
+        // debug!($( $arg ),+);
     };
 }
 
@@ -326,7 +327,7 @@ mod detail {
         }
 
         pub fn count(&self) -> u32 {
-            self.maxcnt.get()
+            self.amount.get()
         }
     }
 }
@@ -653,6 +654,7 @@ pub enum CtrlState {
     Init,
     ReadIn,
     ReadStatus,
+    WriteOutSetup,
     WriteOut,
 }
 
@@ -1157,6 +1159,7 @@ impl<'a> Usbd<'a> {
         // Note: isochronous endpoint receives a dedicated ENDISOOUT interrupt instead.
         for ep in 0..NUM_ENDPOINTS {
             if events_to_process.is_set(inter_endepout(ep)) {
+                debug!("he");
                 self.handle_endepout(ep);
             }
         }
@@ -1351,6 +1354,8 @@ impl<'a> Usbd<'a> {
         // Nothing else to do. Wait for the EPDATA event.
     }
 
+    /// Data has been sent over the USB bus, and the hardware has ACKed it.
+    /// This is for the control endpoint only.
     fn handle_ep0datadone(&self) {
         let regs = &*self.registers;
 
@@ -1365,13 +1370,37 @@ impl<'a> Usbd<'a> {
                 self.complete_ctrl_status();
             }
 
+            CtrlState::WriteOutSetup => {
+                // We just completed the Setup stage for a CTRL WRITE transfer,
+                // and we have no received data.
+
+                // Next step is to signal startepout[0] to let the hardware
+                // move the data to RAM.
+                debug_tasks!("GOT DATA- task: startepout[{}]", endpoint);
+                regs.task_startepout[endpoint].write(Task::ENABLE::SET);
+
+
+
+                // // First, release the DMA
+                // self.clear_pending_dma();
+
+                // self.descriptors[endpoint]
+                //     .state
+                //     .set(EndpointState::Ctrl(CtrlState::WriteOutSetup));
+
+                // self.start_dma_out(endpoint);
+
+            }
+
             CtrlState::WriteOut => {
                 self.handle_ctrl_write();
+
             }
 
             CtrlState::Init => {
                 // We shouldn't be there. Let's STALL the endpoint.
                 debug_tasks!("- task: ep0stall");
+                debug!("STLL");
                 regs.task_ep0stall.write(Task::ENABLE::SET);
             }
         }
@@ -1389,10 +1418,44 @@ impl<'a> Usbd<'a> {
 
         match endpoint {
             0 => {
-                // TODO: the ENDEPOUT0_EP0RCVOUT shortcut could be established instead of manually
-                // triggering the task here.
-                debug_tasks!("- task: ep0rcvout");
-                regs.task_ep0rcvout.write(Task::ENABLE::SET);
+                // We got data on the control endpoint.
+                // We need to check the status
+                // let ep0datastatus = regs.epdatastatus.extract();
+                debug!("got {}", regs.epout[endpoint].count());
+
+                // Now we can handle it and pass it to the client to see
+                // what the client returns.
+                self.client.map(|client| {
+                    match client.ctrl_out(endpoint, regs.epout[endpoint].count()) {
+                        hil::usb::CtrlOutResult::Ok => {
+                            self.complete_ctrl_status();
+                        }
+                        hil::usb::CtrlOutResult::Delay => {}
+                        _ => {
+                            // Respond with STALL to any following transactions
+                            // in this request
+                            debug_tasks!("- task: ctrl write: ep0stall");
+                            debug!("STLL");
+                            regs.task_ep0stall.write(Task::ENABLE::SET);
+                            self.descriptors[endpoint]
+                                .state
+                                .set(EndpointState::Ctrl(CtrlState::Init));
+                        }
+                    };
+                });
+
+                // We now want to move
+                // to the status stage. So, we signal the ep0status task.
+                // debug_tasks!("- task: ep0status");
+                // regs.task_ep0status.write(Task::ENABLE::SET);
+                // self.complete_ctrl_status();
+
+
+
+                // // TODO: the ENDEPOUT0_EP0RCVOUT shortcut could be established instead of manually
+                // // triggering the task here.
+                // debug_tasks!("- task: ep0rcvout");
+                // regs.task_ep0rcvout.write(Task::ENABLE::SET);
             }
             1..=7 => {
                 // Notify the client about the new packet.
@@ -1419,6 +1482,7 @@ impl<'a> Usbd<'a> {
                         }
 
                         hil::usb::OutResult::Error => {
+                            debug!("EPSTALL");
                             regs.epstall.write(
                                 EndpointStall::EP.val(endpoint as u32)
                                     + EndpointStall::IO::Out
@@ -1545,6 +1609,7 @@ impl<'a> Usbd<'a> {
         }
     }
 
+    /// Handle the first event of a control transfer, the setup stage.
     fn handle_ep0setup(&self) {
         let regs = &*self.registers;
 
@@ -1552,6 +1617,8 @@ impl<'a> Usbd<'a> {
         let state = self.descriptors[endpoint].state.get().ctrl_state();
         match state {
             CtrlState::Init => {
+                // We are idle, and ready for any control transfer.
+
                 let ep_buf = &self.descriptors[endpoint].slice_out;
                 let ep_buf = ep_buf.expect("No OUT slice set for this descriptor");
                 if ep_buf.len() < 8 {
@@ -1571,23 +1638,34 @@ impl<'a> Usbd<'a> {
                 ep_buf[7].set(regs.wlengthh.read(Byte::VALUE) as u8);
                 let size = regs.wlengthl.read(Byte::VALUE) + (regs.wlengthh.read(Byte::VALUE) << 8);
 
+                debug!("idle {}", size);
+
                 self.client.map(|client| {
+                    // Notify the client that the ctrl setup event has occurred.
+                    // Allow it to configure any data we need to send back.
                     match client.ctrl_setup(endpoint) {
                         hil::usb::CtrlSetupResult::OkSetAddress => {}
                         hil::usb::CtrlSetupResult::Ok => {
                             // Setup request is successful.
                             if size == 0 {
+                                debug!("s0");
+                                // Directly handle a 0 length setup request.
                                 self.complete_ctrl_status();
                             } else {
                                 match regs.bmrequesttype.read_as_enum(RequestType::DIRECTION) {
                                     Some(RequestType::DIRECTION::Value::HostToDevice) => {
-                                        // CTRL WRITE transaction
+                                        // CTRL WRITE transfer with data to
+                                        // receive. We first need to setup DMA
+                                        // so that the hardware can write the
+                                        // data to us.
                                         self.descriptors[endpoint]
                                             .state
-                                            .set(EndpointState::Ctrl(CtrlState::WriteOut));
+                                            .set(EndpointState::Ctrl(CtrlState::WriteOutSetup));
+                                        debug!("toep0");
                                         self.transmit_out_ep0();
                                     }
                                     Some(RequestType::DIRECTION::Value::DeviceToHost) => {
+                                        // CTRL READ transfer
                                         self.descriptors[endpoint]
                                             .state
                                             .set(EndpointState::Ctrl(CtrlState::ReadIn));
@@ -1598,19 +1676,22 @@ impl<'a> Usbd<'a> {
                                 }
                             }
                         }
-                        _err => {
+                        err => {
                             // An error occurred, we STALL
-                            debug_tasks!("- task: ep0stall");
+                            debug!("e {:?}", err);
+                            debug_tasks!("- task: ep0stall (idle ctrl setup)");
+                            debug!("STLL");
                             regs.task_ep0stall.write(Task::ENABLE::SET);
                         }
                     }
                 });
             }
 
-            CtrlState::ReadIn | CtrlState::ReadStatus | CtrlState::WriteOut => {
+            CtrlState::ReadIn | CtrlState::ReadStatus | CtrlState::WriteOutSetup | CtrlState::WriteOut => {
                 // Unexpected state to receive a SETUP packet. Let's STALL the endpoint.
                 internal_warn!("handle_ep0setup - unexpected state = {:?}", state);
                 debug_tasks!("- task: ep0stall");
+                debug!("STLL");
                 regs.task_ep0stall.write(Task::ENABLE::SET);
             }
         }
@@ -1631,30 +1712,26 @@ impl<'a> Usbd<'a> {
         });
     }
 
+    // fn complete_ctrl_data(&self) {
+    //     let regs = &*self.registers;
+    //     let endpoint = 0;
+
+    //     self.client.map(|client| {
+    //         client.ctrl_status(endpoint);
+    //         debug_tasks!("- task: ep0datadone");
+    //         regs.task_ep0datadone.write(Task::ENABLE::SET);
+    //         client.ctrl_status_complete(endpoint);
+    //         self.descriptors[endpoint]
+    //             .state
+    //             .set(EndpointState::Ctrl(CtrlState::Init));
+    //     });
+    // }
+
     /// Called after we receive data from the host on a CTRL WRITE transaction.
     ///
     /// TODO: actually fully implement this function
     fn handle_ctrl_write(&self) {
-        let regs = &*self.registers;
-        let endpoint = 0;
 
-        self.client.map(|client| {
-            match client.ctrl_out(endpoint, regs.epout[endpoint].count()) {
-                hil::usb::CtrlOutResult::Ok => {
-                    self.complete_ctrl_status();
-                }
-                hil::usb::CtrlOutResult::Delay => {}
-                _ => {
-                    // Respond with STALL to any following transactions
-                    // in this request
-                    debug_tasks!("- task: ctrl write: ep0stall");
-                    regs.task_ep0stall.write(Task::ENABLE::SET);
-                    self.descriptors[endpoint]
-                        .state
-                        .set(EndpointState::Ctrl(CtrlState::Init));
-                }
-            };
-        });
     }
 
     fn process_dma_requests(&self) {
@@ -1704,6 +1781,7 @@ impl<'a> Usbd<'a> {
                 hil::usb::CtrlInResult::Error => {
                     // An error occurred, we STALL
                     debug_tasks!("- task: ep0stall");
+                    debug!("STLL");
                     regs.task_ep0stall.write(Task::ENABLE::SET);
                 }
             };
@@ -1717,7 +1795,23 @@ impl<'a> Usbd<'a> {
         let regs = &*self.registers;
         let endpoint = 0;
 
-        self.start_dma_out(endpoint);
+        // self.start_dma_out(endpoint);
+
+
+        // let regs = &*self.registers;
+
+        let slice = self.descriptors[endpoint]
+            .slice_out
+            .expect("No OUT slice set for this descriptor");
+
+        // Start DMA transfer
+        self.set_pending_dma();
+        regs.epout[endpoint].set_buffer(slice);
+
+        // Run the ep0rcvout to signal to the hardware that the DMA is setup
+        // and a buffer is ready.
+        debug_tasks!("- task: ep0rcvout");
+        regs.task_ep0rcvout.write(Task::ENABLE::SET);
     }
 
     fn transmit_in(&self, endpoint: usize) {
@@ -1743,6 +1837,7 @@ impl<'a> Usbd<'a> {
                 }
 
                 hil::usb::InResult::Error => {
+                    debug!("EPSTALL");
                     regs.epstall.write(
                         EndpointStall::EP.val(endpoint as u32)
                             + EndpointStall::IO::In
