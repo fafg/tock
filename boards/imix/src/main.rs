@@ -24,10 +24,10 @@ use kernel::hil::i2c::I2CMaster;
 use kernel::hil::radio;
 #[allow(unused_imports)]
 use kernel::hil::radio::{RadioConfig, RadioData};
+use kernel::hil::usb::Client;
 use kernel::hil::Controller;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, static_init};
-use kernel::hil::usb::Client;
 
 use components;
 use components::alarm::{AlarmDriverComponent, AlarmMuxComponent};
@@ -290,7 +290,10 @@ pub unsafe fn reset_handler() {
     // Configure the USB controller
     let cdc = static_init!(
         capsules::usb::cdc::Cdc<'static, sam4l::usbc::Usbc<'static>>,
-        capsules::usb::cdc::Cdc::new(&sam4l::usbc::USBC, capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_SAM4L)
+        capsules::usb::cdc::Cdc::new(
+            &sam4l::usbc::USBC,
+            capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_SAM4L
+        )
     );
     sam4l::usbc::USBC.set_client(cdc);
 
@@ -306,7 +309,6 @@ pub unsafe fn reset_handler() {
     //     )
     // );
 
-
     // # CONSOLE
     // Create a shared UART channel for the consoles and for kernel debug.
     sam4l::usart::USART3.set_mode(sam4l::usart::UsartMode::Uart);
@@ -315,10 +317,7 @@ pub unsafe fn reset_handler() {
 
     let pconsole = ProcessConsoleComponent::new(board_kernel, uart_mux).finalize(());
 
-
-
     // let console = ConsoleComponent::new(board_kernel, uart_mux).finalize(());
-
 
     let console = static_init!(
         capsules::console::Console<'static>,
@@ -331,12 +330,6 @@ pub unsafe fn reset_handler() {
     );
     kernel::hil::uart::Transmit::set_transmit_client(cdc, console);
     kernel::hil::uart::Receive::set_receive_client(cdc, console);
-
-
-
-
-
-
 
     DebugWriterComponent::new(uart_mux).finalize(());
 
