@@ -17,7 +17,6 @@ use super::usbc_client_ctrl::ClientCtrl;
 use kernel::common::cells::OptionalCell;
 use kernel::common::cells::TakeCell;
 use kernel::common::cells::VolatileCell;
-use kernel::debug;
 use kernel::hil;
 use kernel::hil::uart;
 use kernel::hil::usb::TransferType;
@@ -83,8 +82,8 @@ pub struct CdcAcm<'a, U: 'a> {
     rx_client: OptionalCell<&'a dyn uart::ReceiveClient>,
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> CdcAcm<'a, C> {
-    pub fn new(controller: &'a C, max_ctrl_packet_size: u8) -> Self {
+impl<'a, U: hil::usb::UsbController<'a>> CdcAcm<'a, U> {
+    pub fn new(controller: &'a U, max_ctrl_packet_size: u8) -> Self {
         let interfaces: &mut [InterfaceDescriptor] = &mut [
             InterfaceDescriptor {
                 interface_number: 0,
@@ -203,7 +202,7 @@ impl<'a, C: hil::usb::UsbController<'a>> CdcAcm<'a, C> {
     }
 
     #[inline]
-    fn controller(&self) -> &'a C {
+    fn controller(&self) -> &'a U {
         self.client_ctrl.controller()
     }
 
@@ -213,7 +212,7 @@ impl<'a, C: hil::usb::UsbController<'a>> CdcAcm<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> {
+impl<'a, U: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, U> {
     fn enable(&'a self) {
         // Set up the default control endpoint
         self.client_ctrl.enable();
@@ -415,7 +414,7 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Configure for CdcAcm<'a, C> {
+impl<'a, U: hil::usb::UsbController<'a>> uart::Configure for CdcAcm<'a, U> {
     fn configure(&self, _parameters: uart::Parameters) -> ReturnCode {
         // Since this is not a real UART, we don't need to consider these
         // parameters.
@@ -423,7 +422,7 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Configure for CdcAcm<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Transmit<'a> for CdcAcm<'a, C> {
+impl<'a, U: hil::usb::UsbController<'a>> uart::Transmit<'a> for CdcAcm<'a, U> {
     fn set_transmit_client(&self, client: &'a dyn uart::TransmitClient) {
         self.tx_client.set(client);
     }
@@ -465,7 +464,7 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Transmit<'a> for CdcAcm<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Receive<'a> for CdcAcm<'a, C> {
+impl<'a, U: hil::usb::UsbController<'a>> uart::Receive<'a> for CdcAcm<'a, U> {
     fn set_receive_client(&self, client: &'a dyn uart::ReceiveClient) {
         self.rx_client.set(client);
     }
@@ -497,5 +496,5 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Receive<'a> for CdcAcm<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Uart<'a> for CdcAcm<'a, C> {}
-impl<'a, C: hil::usb::UsbController<'a>> uart::UartData<'a> for CdcAcm<'a, C> {}
+impl<'a, U: hil::usb::UsbController<'a>> uart::Uart<'a> for CdcAcm<'a, U> {}
+impl<'a, U: hil::usb::UsbController<'a>> uart::UartData<'a> for CdcAcm<'a, U> {}
