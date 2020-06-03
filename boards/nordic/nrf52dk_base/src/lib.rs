@@ -222,8 +222,8 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
 
     // Configure the USB controller
     let cdc = static_init!(
-        capsules::usb::cdc::Cdc<'static, nrf52::usbd::Usbd<'static>>,
-        capsules::usb::cdc::Cdc::new(&nrf52::usbd::USBD, capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_NRF52840)
+        capsules::usb::cdc::CdcAcm<'static, nrf52::usbd::Usbd<'static>>,
+        capsules::usb::cdc::CdcAcm::new(&nrf52::usbd::USBD, capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_NRF52840)
     );
     nrf52::usbd::USBD.set_client(cdc);
 

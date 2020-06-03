@@ -289,8 +289,8 @@ pub unsafe fn reset_handler() {
 
     // Configure the USB controller
     let cdc = static_init!(
-        capsules::usb::cdc::Cdc<'static, sam4l::usbc::Usbc<'static>>,
-        capsules::usb::cdc::Cdc::new(
+        capsules::usb::cdc::CdcAcm<'static, sam4l::usbc::Usbc<'static>>,
+        capsules::usb::cdc::CdcAcm::new(
             &sam4l::usbc::USBC,
             capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_SAM4L
         )

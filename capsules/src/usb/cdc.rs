@@ -1,10 +1,12 @@
-//! CDC
+//! Communications Class Device for USB
+//!
+//! This capsule allows Tock to support a serial port over USB.
 
 use core::cell::Cell;
 use core::cmp;
 
 use super::descriptors::{
-    self, Buffer64, CsInterfaceDescriptor, EndpointAddress, EndpointDescriptor,
+    self, Buffer64, CdcInterfaceDescriptor, EndpointAddress, EndpointDescriptor,
     InterfaceDescriptor, TransferDirection,
 };
 use super::usbc_client_ctrl::ClientCtrl;
@@ -45,7 +47,9 @@ pub const MAX_CTRL_PACKET_SIZE_NRF52840: u8 = 64;
 
 const N_ENDPOINTS: usize = 3;
 
-pub struct Cdc<'a, U: 'a> {
+/// Implementation of the Abstract Control Model (ACM) for the Communications
+/// Class Device (CDC) over USB.
+pub struct CdcAcm<'a, U: 'a> {
     /// Helper USB client library for handling many USB operations.
     client_ctrl: ClientCtrl<'a, 'static, U>,
 
@@ -76,7 +80,7 @@ pub struct Cdc<'a, U: 'a> {
     rx_client: OptionalCell<&'a dyn uart::ReceiveClient>,
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> Cdc<'a, C> {
+impl<'a, C: hil::usb::UsbController<'a>> CdcAcm<'a, C> {
     pub fn new(controller: &'a C, max_ctrl_packet_size: u8) -> Self {
         let interfaces: &mut [InterfaceDescriptor] = &mut [
             InterfaceDescriptor {
@@ -95,24 +99,24 @@ impl<'a, C: hil::usb::UsbController<'a>> Cdc<'a, C> {
             },
         ];
 
-        let cdc_descriptors: &mut [CsInterfaceDescriptor] = &mut [
-            CsInterfaceDescriptor {
-                subtype: descriptors::CsInterfaceDescriptorSubType::Header,
+        let cdc_descriptors: &mut [CdcInterfaceDescriptor] = &mut [
+            CdcInterfaceDescriptor {
+                subtype: descriptors::CdcInterfaceDescriptorSubType::Header,
                 field1: 0x10, // CDC
                 field2: 0x11, // CDC
             },
-            CsInterfaceDescriptor {
-                subtype: descriptors::CsInterfaceDescriptorSubType::CallManagement,
+            CdcInterfaceDescriptor {
+                subtype: descriptors::CdcInterfaceDescriptorSubType::CallManagement,
                 field1: 0x00, // Capabilities
                 field2: 0x01, // Data interface 1
             },
-            CsInterfaceDescriptor {
-                subtype: descriptors::CsInterfaceDescriptorSubType::AbstractControlManagement,
+            CdcInterfaceDescriptor {
+                subtype: descriptors::CdcInterfaceDescriptorSubType::AbstractControlManagement,
                 field1: 0x06, // Capabilities
                 field2: 0x00, // unused
             },
-            CsInterfaceDescriptor {
-                subtype: descriptors::CsInterfaceDescriptorSubType::Union,
+            CdcInterfaceDescriptor {
+                subtype: descriptors::CdcInterfaceDescriptorSubType::Union,
                 field1: 0x00, // Interface 0
                 field2: 0x01, // Interface 1
             },
@@ -168,7 +172,7 @@ impl<'a, C: hil::usb::UsbController<'a>> Cdc<'a, C> {
                 Some(cdc_descriptors),
             );
 
-        Cdc {
+        CdcAcm {
             client_ctrl: ClientCtrl::new(
                 controller,
                 device_descriptor_buffer,
@@ -206,7 +210,7 @@ impl<'a, C: hil::usb::UsbController<'a>> Cdc<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
+impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> {
     fn enable(&'a self) {
         // Set up the default control endpoint
         self.client_ctrl.enable();
@@ -419,7 +423,7 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Configure for Cdc<'a, C> {
+impl<'a, C: hil::usb::UsbController<'a>> uart::Configure for CdcAcm<'a, C> {
     fn configure(&self, _parameters: uart::Parameters) -> ReturnCode {
         // Since this is not a real UART, we don't need to consider these
         // parameters.
@@ -427,7 +431,7 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Configure for Cdc<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Transmit<'a> for Cdc<'a, C> {
+impl<'a, C: hil::usb::UsbController<'a>> uart::Transmit<'a> for CdcAcm<'a, C> {
     fn set_transmit_client(&self, client: &'a dyn uart::TransmitClient) {
         self.tx_client.set(client);
     }
@@ -469,7 +473,7 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Transmit<'a> for Cdc<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Receive<'a> for Cdc<'a, C> {
+impl<'a, C: hil::usb::UsbController<'a>> uart::Receive<'a> for CdcAcm<'a, C> {
     fn set_receive_client(&self, client: &'a dyn uart::ReceiveClient) {
         self.rx_client.set(client);
     }
@@ -501,5 +505,5 @@ impl<'a, C: hil::usb::UsbController<'a>> uart::Receive<'a> for Cdc<'a, C> {
     }
 }
 
-impl<'a, C: hil::usb::UsbController<'a>> uart::Uart<'a> for Cdc<'a, C> {}
-impl<'a, C: hil::usb::UsbController<'a>> uart::UartData<'a> for Cdc<'a, C> {}
+impl<'a, C: hil::usb::UsbController<'a>> uart::Uart<'a> for CdcAcm<'a, C> {}
+impl<'a, C: hil::usb::UsbController<'a>> uart::UartData<'a> for CdcAcm<'a, C> {}
