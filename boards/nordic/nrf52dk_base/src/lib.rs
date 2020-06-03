@@ -2,9 +2,9 @@
 
 #![no_std]
 
+use kernel::hil::usb::Client;
 #[allow(unused_imports)]
 use kernel::{create_capability, debug, debug_gpio, debug_verbose, static_init};
-use kernel::hil::usb::Client;
 
 use capsules::virtual_alarm::VirtualMuxAlarm;
 use kernel::capabilities;
@@ -219,18 +219,18 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         components::process_console::ProcessConsoleComponent::new(board_kernel, uart_mux)
             .finalize(());
 
-
     // Configure the USB controller
     let cdc = static_init!(
         capsules::usb::cdc::CdcAcm<'static, nrf52::usbd::Usbd<'static>>,
-        capsules::usb::cdc::CdcAcm::new(&nrf52::usbd::USBD, capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_NRF52840)
+        capsules::usb::cdc::CdcAcm::new(
+            &nrf52::usbd::USBD,
+            capsules::usb::cdc::MAX_CTRL_PACKET_SIZE_NRF52840
+        )
     );
     nrf52::usbd::USBD.set_client(cdc);
 
-
     // Setup the console.
     // let console = components::console::ConsoleComponent::new(board_kernel, uart_mux).finalize(());
-
 
     let console = static_init!(
         capsules::console::Console<'static>,
@@ -243,7 +243,6 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
     );
     kernel::hil::uart::Transmit::set_transmit_client(cdc, console);
     kernel::hil::uart::Receive::set_receive_client(cdc, console);
-
 
     // Create the debugger object that handles calls to `debug!()`.
     components::debug_writer::DebugWriterComponent::new(uart_mux).finalize(());
@@ -329,8 +328,6 @@ pub unsafe fn setup_board<I: nrf52::interrupt_service::InterruptService>(
         components::acomp_component_helper!(nrf52::acomp::Channel, &nrf52::acomp::CHANNEL_AC0),
     )
     .finalize(components::acomp_component_buf!(nrf52::acomp::Comparator));
-
-
 
     // Configure the USB userspace driver
     // let usb_driver = static_init!(
