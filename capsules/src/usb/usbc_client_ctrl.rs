@@ -357,9 +357,7 @@ impl<'a, 'b, U: hil::usb::UsbController<'a>> ClientCtrl<'a, 'b, U> {
                         hil::usb::CtrlSetupResult::ErrGeneric
                     }
                 }
-                _ => {
-                    hil::usb::CtrlSetupResult::ErrGeneric
-                }
+                _ => hil::usb::CtrlSetupResult::ErrGeneric,
             },
             _ => hil::usb::CtrlSetupResult::ErrGeneric,
         }

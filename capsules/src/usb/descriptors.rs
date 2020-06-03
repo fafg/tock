@@ -753,7 +753,7 @@ pub struct HIDSubordinateDescriptor {
     pub len: u16,
 }
 
-impl Descriptor for HIDDescriptor<'a> {
+impl<'a> Descriptor for HIDDescriptor<'a> {
     fn size(&self) -> usize {
         6 + (3 * self.sub_descriptors.len())
     }
@@ -777,7 +777,7 @@ pub struct ReportDescriptor<'a> {
     pub desc: &'a [u8],
 }
 
-impl Descriptor for ReportDescriptor<'a> {
+impl<'a> Descriptor for ReportDescriptor<'a> {
     fn size(&self) -> usize {
         self.desc.len()
     }
@@ -863,7 +863,7 @@ pub struct LanguagesDescriptor<'a> {
     pub langs: &'a [u16],
 }
 
-impl Descriptor for LanguagesDescriptor<'a> {
+impl<'a> Descriptor for LanguagesDescriptor<'a> {
     fn size(&self) -> usize {
         2 + (2 * self.langs.len())
     }
@@ -883,7 +883,7 @@ pub struct StringDescriptor<'a> {
     pub string: &'a str,
 }
 
-impl Descriptor for StringDescriptor<'a> {
+impl<'a> Descriptor for StringDescriptor<'a> {
     fn size(&self) -> usize {
         let mut len = 2;
         for ch in self.string.chars() {
