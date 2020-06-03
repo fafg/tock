@@ -5,10 +5,13 @@
 use core::cell::Cell;
 use core::cmp;
 
-use super::descriptors::{
-    self, Buffer64, CdcInterfaceDescriptor, EndpointAddress, EndpointDescriptor,
-    InterfaceDescriptor, TransferDirection,
-};
+use super::descriptors;
+use super::descriptors::Buffer64;
+use super::descriptors::CdcInterfaceDescriptor;
+use super::descriptors::EndpointAddress;
+use super::descriptors::EndpointDescriptor;
+use super::descriptors::InterfaceDescriptor;
+use super::descriptors::TransferDirection;
 use super::usbc_client_ctrl::ClientCtrl;
 
 use kernel::common::cells::OptionalCell;
@@ -232,10 +235,7 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
     }
 
     fn bus_reset(&'a self) {
-        // Should the client initiate reconfiguration here?
-        // For now, the hardware layer does it.
-
-        debug!("Bus reset");
+        // No need to handle this at this layer.
     }
 
     /// Handle a Control Setup transaction
@@ -279,10 +279,6 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
     /// until this function is called when we don't have anything left to send.
     fn packet_in(&'a self, transfer_type: TransferType, endpoint: usize) -> hil::usb::InResult {
         match transfer_type {
-            TransferType::Interrupt => {
-                debug!("interrupt_in({}) not implemented", endpoint);
-                hil::usb::InResult::Error
-            }
             TransferType::Bulk => {
                 self.tx_buffer
                     .take()
@@ -333,7 +329,10 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
                         }
                     })
             }
-            TransferType::Control | TransferType::Isochronous => unreachable!(),
+            TransferType::Control | TransferType::Isochronous | TransferType::Interrupt => {
+                // Nothing to do for CDC ACM.
+                hil::usb::InResult::Delay
+            }
         }
     }
 
@@ -345,10 +344,6 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
         packet_bytes: u32,
     ) -> hil::usb::OutResult {
         match transfer_type {
-            TransferType::Interrupt => {
-                debug!("interrupt_out({}) not implemented", endpoint);
-                hil::usb::OutResult::Error
-            }
             TransferType::Bulk => {
                 // Start by checking to see if we even care about this RX or
                 // not.
@@ -391,35 +386,32 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, C> 
                 // No error cases to report to the USB.
                 hil::usb::OutResult::Ok
             }
-            TransferType::Control | TransferType::Isochronous => unreachable!(),
+            TransferType::Control | TransferType::Isochronous | TransferType::Interrupt => {
+                // Nothing to do for CDC ACM.
+                hil::usb::OutResult::Ok
+            }
         }
     }
 
     fn packet_transmitted(&'a self, _endpoint: usize) {
         // Check if more to send.
-        self.tx_buffer
-            .take()
-            .map(|tx_buf| {
-                // Check if we have any bytes to send.
-                let remaining = self.tx_len.get() - self.tx_offset.get();
-                if remaining > 0 {
-                    // We do, so ask to send again.
-                    self.tx_buffer.replace(tx_buf);
-                    self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
-                } else {
-                    // We don't have anything to send, so that means we are
-                    // ok to signal the callback.
+        self.tx_buffer.take().map(|tx_buf| {
+            // Check if we have any bytes to send.
+            let remaining = self.tx_len.get() - self.tx_offset.get();
+            if remaining > 0 {
+                // We do, so ask to send again.
+                self.tx_buffer.replace(tx_buf);
+                self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
+            } else {
+                // We don't have anything to send, so that means we are
+                // ok to signal the callback.
 
-                    // Signal the callback and pass back the TX buffer.
-                    self.tx_client.map(move |tx_client| {
-                        tx_client.transmitted_buffer(
-                            tx_buf,
-                            self.tx_len.get(),
-                            ReturnCode::SUCCESS,
-                        )
-                    });
-                }
-            });
+                // Signal the callback and pass back the TX buffer.
+                self.tx_client.map(move |tx_client| {
+                    tx_client.transmitted_buffer(tx_buf, self.tx_len.get(), ReturnCode::SUCCESS)
+                });
+            }
+        });
     }
 }
 
