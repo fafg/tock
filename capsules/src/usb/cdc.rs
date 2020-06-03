@@ -246,9 +246,9 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
 
     /// Handle a Control Out transaction
     fn ctrl_out(&'a self, endpoint: usize, packet_bytes: u32) -> hil::usb::CtrlOutResult {
-
-        // Hack to make sure we ask to send data in case the data to send in
-        // came in first before USB was actually all configured.
+        // Hack to make sure we ask to send data if we have a buffer queued. We
+        // expect control out messages when the host actually connects via CDC,
+        // so we use this to generate the data IN request.
         if self.tx_buffer.is_some() {
             self.controller().endpoint_resume_in(ENDPOINT_IN_NUM);
         }
@@ -392,7 +392,6 @@ impl<'a, C: hil::usb::UsbController<'a>> hil::usb::Client<'a> for Cdc<'a, C> {
     }
 
     fn packet_transmitted(&'a self, _endpoint: usize) {
-
         // Check if more to send.
         self.tx_buffer
             .take()
