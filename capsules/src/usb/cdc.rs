@@ -63,9 +63,6 @@ pub struct CdcAcm<'a, U: 'a> {
     /// The number of bytes the client has asked us to send. We track this so we
     /// can pass it back to the client when the transmission has finished.
     tx_len: Cell<usize>,
-    /// How many more bytes we need to transmit. This is used in our TX state
-    /// machine.
-    tx_remaining: Cell<usize>,
     /// Where in the `tx_buffer` we need to start sending from when we continue.
     tx_offset: Cell<usize>,
     /// The TX client to use when transmissions finish.
@@ -191,7 +188,6 @@ impl<'a, U: hil::usb::UsbController<'a>> CdcAcm<'a, U> {
             ],
             tx_buffer: TakeCell::empty(),
             tx_len: Cell::new(0),
-            tx_remaining: Cell::new(0),
             tx_offset: Cell::new(0),
             tx_client: OptionalCell::empty(),
             rx_buffer: TakeCell::empty(),
@@ -283,7 +279,8 @@ impl<'a, U: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, U> 
                     .take()
                     .map_or(hil::usb::InResult::Delay, |tx_buf| {
                         // Check if we have any bytes to send.
-                        let remaining = self.tx_remaining.get();
+                        let offset = self.tx_offset.get();
+                        let remaining = self.tx_len.get() - offset;
                         if remaining > 0 {
                             // We do, so we go ahead and send those.
 
@@ -295,13 +292,11 @@ impl<'a, U: hil::usb::UsbController<'a>> hil::usb::Client<'a> for CdcAcm<'a, U> 
                             let to_send = cmp::min(packet.len(), remaining);
 
                             // Copy from the TX buffer to the outgoing USB packet.
-                            let offset = self.tx_offset.get();
                             for i in 0..to_send {
                                 packet[i].set(tx_buf[offset + i]);
                             }
 
                             // Update our state on how much more there is to send.
-                            self.tx_remaining.set(remaining - to_send);
                             self.tx_offset.set(offset + to_send);
 
                             // Put the TX buffer back so we can keep sending from it.
@@ -442,7 +437,6 @@ impl<'a, U: hil::usb::UsbController<'a>> uart::Transmit<'a> for CdcAcm<'a, U> {
         } else {
             // Ok, we can handle this transmission. Initialize all of our state
             // for our TX state machine.
-            self.tx_remaining.set(tx_len);
             self.tx_len.set(tx_len);
             self.tx_offset.set(0);
             self.tx_buffer.replace(tx_buffer);
