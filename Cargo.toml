@@ -19,7 +19,7 @@ members = [
     "boards/opentitan",
     "boards/redboard_artemis_nano",
     "boards/stm32f3discovery",
-    "boards/mxchipAZ3166",
+    "boards/mxchip_az3166",
     "capsules",
     "chips/apollo3",
     "chips/arty_e21_chip",

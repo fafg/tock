@@ -1,6 +1,8 @@
 use core::fmt::Write;
 use core::panic::PanicInfo;
 
+use cortexm4;
+
 use kernel::debug;
 use kernel::debug::IoWrite;
 use kernel::hil::led;
@@ -38,13 +40,13 @@ impl Write for Writer {
 
 impl IoWrite for Writer {
     fn write(&mut self, buf: &[u8]) {
-        let uart = unsafe { &mut stm32f412::usart::USART1 };
+        let uart = unsafe { &mut stm32f412::usart::USART3 };
 
         if !self.initialized {
             self.initialized = true;
 
             uart.configure(uart::Parameters {
-                baud_rate: 11500,
+                baud_rate: 115200,
                 stop_bits: uart::StopBits::One,
                 parity: uart::Parity::None,
                 hw_flow_control: false,
@@ -62,8 +64,8 @@ impl IoWrite for Writer {
 #[no_mangle]
 #[panic_handler]
 pub unsafe extern "C" fn panic_fmt(info: &PanicInfo) -> ! {
-    // User LD3 is connected to PE09
-    let led = &mut led::LedHigh::new(PinId::PE09.get_pin_mut().as_mut().unwrap());
+    // User LD2 is connected to PB07
+    let led = &mut led::LedHigh::new(PinId::PB07.get_pin_mut().as_mut().unwrap());
     let writer = &mut WRITER;
 
     debug::panic(

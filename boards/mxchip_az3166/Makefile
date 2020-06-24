@@ -1,7 +1,7 @@
-# Makefile for building the tock kernel for the STM32F3DISCOVERY platform
+# Makefile for building the tock kernel for the NUCLEO-429ZI platform
 #
 TARGET=thumbv7em-none-eabi
-PLATFORM=mxchipaz3166
+PLATFORM=mxchip_az3166
 
 include ../Makefile.common
 
